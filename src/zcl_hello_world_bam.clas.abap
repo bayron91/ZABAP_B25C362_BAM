@@ -11,12 +11,11 @@ CLASS zcl_hello_world_bam DEFINITION
 ENDCLASS.
 
 
-CLASS zcl_hello_world_bam IMPLEMENTATION.
+
+CLASS ZCL_HELLO_WORLD_BAM IMPLEMENTATION.
+
 
   METHOD if_oo_adt_classrun~main.
-
     out->write( |Hello world!!!| ).
-
   ENDMETHOD.
-
 ENDCLASS.
