@@ -21,6 +21,15 @@ CLASS zcl_work_order_crud_handle_bam DEFINITION
     METHODS read_work_order IMPORTING iv_order        TYPE zde_work_order_id_bam
                             RETURNING VALUE(rs_order) TYPE ztworkorder_bam.
 
+  PRIVATE SECTION.
+    METHODS instance_lock_object RETURNING VALUE(ro_lock_object) TYPE REF TO if_abap_lock_object.
+    METHODS enqueue_lock_object IMPORTING lo_lock_object  TYPE REF TO if_abap_lock_object
+                                          it_parameter    TYPE if_abap_lock_object=>tt_parameter
+                                RETURNING VALUE(rv_valid) TYPE abap_bool.
+    METHODS dequeue_lock_object IMPORTING lo_lock_object  TYPE REF TO if_abap_lock_object
+                                          it_parameter    TYPE if_abap_lock_object=>tt_parameter
+                                RETURNING VALUE(rv_valid) TYPE abap_bool.
+
 ENDCLASS.
 
 
@@ -39,11 +48,38 @@ CLASS zcl_work_order_crud_handle_bam IMPLEMENTATION.
 
     IF rv_valid EQ '5'.
       TRY.
-          MODIFY ztworkorder_bam FROM @is_order.
-          COMMIT WORK AND WAIT.
+          "Get instance lock object
+          DATA(lo_lock_object) = instance_lock_object( ).
+
+          IF lo_lock_object IS NOT BOUND.
+            DATA: lt_parameter TYPE if_abap_lock_object=>tt_parameter.
+
+            lt_parameter = VALUE #( ( name = 'WORK_ORDER_ID' value = REF #( is_order-work_order_id ) )
+                                    ( name = 'CUSTOMER_ID' value = REF #( is_order-customer_id ) )
+                                    ( name = 'TECHNICIAN_ID' value = REF #( is_order-technician_id ) ) ).
+
+            "Enqueue lock object
+            DATA(lv_lock_valid) = enqueue_lock_object( lo_lock_object = lo_lock_object
+                                                       it_parameter = lt_parameter ).
+
+            IF lv_lock_valid = abap_true.
+              MODIFY ztworkorder_bam FROM @is_order.
+              COMMIT WORK AND WAIT.
+            ELSE.
+              rv_valid = '6'.
+            ENDIF.
+          ENDIF.
 
         CATCH cx_sy_open_sql_db INTO DATA(lx_error).
       ENDTRY.
+
+      "Dequeue lock object
+      lv_lock_valid = dequeue_lock_object( lo_lock_object = lo_lock_object
+                                           it_parameter = lt_parameter ).
+
+      IF lv_lock_valid IS INITIAL.
+        rv_valid = '6'.
+      ENDIF.
     ENDIF.
 
   ENDMETHOD.
@@ -126,6 +162,39 @@ CLASS zcl_work_order_crud_handle_bam IMPLEMENTATION.
         INTO @rs_order.
 
     ENDIF.
+
+  ENDMETHOD.
+
+  METHOD instance_lock_object.
+
+    TRY.
+        ro_lock_object = cl_abap_lock_object_factory=>get_instance( 'EZ_WORK_ORDER' ).
+      CATCH cx_abap_lock_failure.
+    ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD enqueue_lock_object.
+
+    rv_valid = abap_true.
+    TRY.
+        lo_lock_object->enqueue( it_parameter = it_parameter ).
+      CATCH cx_abap_foreign_lock.
+        rv_valid = abap_false.
+      CATCH cx_abap_lock_failure.
+        rv_valid = abap_false.
+    ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD dequeue_lock_object.
+
+    rv_valid = abap_true.
+    TRY.
+        lo_lock_object->dequeue( it_parameter = it_parameter ).
+      CATCH cx_abap_lock_failure.
+        rv_valid = abap_false.
+    ENDTRY.
 
   ENDMETHOD.
 

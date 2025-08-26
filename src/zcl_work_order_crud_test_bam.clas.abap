@@ -19,6 +19,8 @@ CLASS zcl_work_order_crud_test_bam DEFINITION
     DATA lt_technician TYPE STANDARD TABLE OF zttechnician_bam.
 
     METHODS:
+      check_authority IMPORTING iv_operation    TYPE abap_bool
+                      RETURNING VALUE(rv_valid) TYPE abap_bool,
       create_status,
       create_priority,
       create_customers,
@@ -52,21 +54,28 @@ CLASS zcl_work_order_crud_test_bam IMPLEMENTATION.
     ENDIF.
 
     "Define operation test
-*    DATA(lv_operation) = lcte_create.  "create work order
+    DATA(lv_operation) = lcte_create.  "create work order
 *    DATA(lv_operation) = lcte_read.   "read   work order
 *    DATA(lv_operation) = lcte_update. "update work order
-    DATA(lv_operation) = lcte_delete. "delete work order
+*    DATA(lv_operation) = lcte_delete. "delete work order
 
-    CASE lv_operation.
-      WHEN lcte_create.
-        test_create_work_order( out ).
-      WHEN lcte_read.
-        test_read_work_order( out ).
-      WHEN lcte_update.
-        test_update_work_order( out ).
-      WHEN lcte_delete.
-        test_delete_work_order( out ).
-    ENDCASE.
+    DATA(lv_valid) = check_authority( lv_operation ).
+
+    IF lv_valid EQ abap_true.
+      CASE lv_operation.
+        WHEN lcte_create.
+          test_create_work_order( out ).
+        WHEN lcte_read.
+          test_read_work_order( out ).
+        WHEN lcte_update.
+          test_update_work_order( out ).
+        WHEN lcte_delete.
+          test_delete_work_order( out ).
+      ENDCASE.
+    ELSE.
+      out->write( |El usuario { cl_abap_context_info=>get_user_alias( ) } no tiene permisos| &&
+                  |, para ejecutar la operación { lv_operation }| ).
+    ENDIF.
 
   ENDMETHOD.
 
@@ -155,14 +164,17 @@ CLASS zcl_work_order_crud_test_bam IMPLEMENTATION.
       WHEN '5'.
         lv_msg = |The work order { ls_order-work_order_id } has been created|.
         ir_out->write( name = 'Create operation:' data = lv_msg ).
+      WHEN '6'.
+        lv_msg = |Error with Lock object EZ_WORK_ORDER|.
+        ir_out->write( name = 'Create operation:' data = lv_msg ).
     ENDCASE.
 
   ENDMETHOD.
 
   METHOD test_delete_work_order.
 
-    DATA(ls_order) = VALUE ztworkorder_bam( work_order_id = 0000000001
-                                            status = 'CO' ).
+    DATA(ls_order) = VALUE ztworkorder_bam( work_order_id = 0000000002
+                                            status = 'PE' ).
 
     DATA(lv_valid) = lo_handler->delete_work_order( iv_order = ls_order-work_order_id
                                                     iv_status = ls_order-status ).
@@ -202,11 +214,9 @@ CLASS zcl_work_order_crud_test_bam IMPLEMENTATION.
 
   METHOD test_update_work_order.
 
-    DATA(ls_order) = VALUE ztworkorder_bam( work_order_id = 0000000003
-*                                            customer_id = 00000001
-*                                            technician_id = 'TEC5'
+    DATA(ls_order) = VALUE ztworkorder_bam( work_order_id = 0000000004
                                             creation_date = cl_abap_context_info=>get_system_date( )
-                                            status = 'CO'
+                                            status = 'PE'
                                             priority = 'B'
                                             description = 'Update data of work order' ).
 
@@ -227,6 +237,45 @@ CLASS zcl_work_order_crud_test_bam IMPLEMENTATION.
         ir_out->write( name = 'Update operation:' data = lv_msg ).
     ENDCASE.
 
+  ENDMETHOD.
+
+  METHOD check_authority.
+
+    rv_valid = abap_true.
+    CASE iv_operation.
+      WHEN 'C'.
+        AUTHORITY-CHECK OBJECT 'ZAO_WO_BAM'
+            ID 'ACTVT' FIELD '01'.
+
+        IF sy-subrc <> 0.
+          rv_valid = abap_false.
+        ENDIF.
+
+      WHEN 'R'.
+        AUTHORITY-CHECK OBJECT 'ZAO_WO_BAM'
+            ID 'ACTVT' FIELD '03'.
+
+        IF sy-subrc <> 0.
+          rv_valid = abap_false.
+        ENDIF.
+
+      WHEN 'U'.
+        AUTHORITY-CHECK OBJECT 'ZAO_WO_BAM'
+            ID 'ACTVT' FIELD '02'.
+
+        IF sy-subrc <> 0.
+          rv_valid = abap_false.
+        ENDIF.
+
+      WHEN 'D'.
+        AUTHORITY-CHECK OBJECT 'ZAO_WO_BAM'
+            ID 'ACTVT' FIELD '06'.
+
+        IF sy-subrc <> 0.
+          rv_valid = abap_false.
+        ENDIF.
+
+    ENDCASE.
   ENDMETHOD.
 
 ENDCLASS.
